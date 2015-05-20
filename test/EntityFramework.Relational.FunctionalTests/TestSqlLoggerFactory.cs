@@ -6,8 +6,10 @@ using System.Collections.Generic;
 using System.Threading;
 using Microsoft.Data.Entity.Utilities;
 using Microsoft.Framework.Logging;
+using Xunit.Abstractions;
 #if !DNXCORE50
 using System.Runtime.Remoting.Messaging;
+
 #endif
 
 namespace Microsoft.Data.Entity.Relational.FunctionalTests
@@ -70,6 +72,11 @@ namespace Microsoft.Data.Entity.Relational.FunctionalTests
             CallContext.LogicalSetData(ContextName, null);
 #endif
         }
+        
+        public static void CaptureOutput(ITestOutputHelper testOutputHelper)
+        {
+            Logger._testOutputHelper = testOutputHelper;
+        }
 
         public static string Log => Logger._log.ToString();
         public static string Sql => string.Join("\r\n\r\n", Logger._sqlStatements);
@@ -80,6 +87,7 @@ namespace Microsoft.Data.Entity.Relational.FunctionalTests
             public readonly IndentedStringBuilder _log = new IndentedStringBuilder();
             public readonly List<string> _sqlStatements = new List<string>();
 
+            public ITestOutputHelper _testOutputHelper;
             public CancellationTokenSource _cancellationTokenSource;
 
             public void Log(
@@ -89,21 +97,26 @@ namespace Microsoft.Data.Entity.Relational.FunctionalTests
                 Exception exception,
                 Func<object, Exception, string> formatter)
             {
-                var format = formatter(state, exception)?.Trim();
+                var format = formatter(state, exception);
 
-                if (eventId == RelationalLoggingEventIds.Sql)
+                if (format != null)
                 {
-                    if (_cancellationTokenSource != null)
+                    if (eventId == RelationalLoggingEventIds.Sql)
                     {
-                        _cancellationTokenSource.Cancel();
-                        _cancellationTokenSource = null;
+                        if (_cancellationTokenSource != null)
+                        {
+                            _cancellationTokenSource.Cancel();
+                            _cancellationTokenSource = null;
+                        }
+
+                        _sqlStatements.Add(format);
+                    }
+                    else
+                    {
+                        _log.AppendLine(format);
                     }
 
-                    _sqlStatements.Add(format);
-                }
-                else
-                {
-                    _log.AppendLine(format);
+                    _testOutputHelper?.WriteLine(format + Environment.NewLine);
                 }
             }
 
